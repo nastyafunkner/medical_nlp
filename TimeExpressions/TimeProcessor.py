@@ -8,7 +8,7 @@ from dateparser.search import search_dates
 from dateutil.relativedelta import relativedelta
 from spacy_stanza import StanzaLanguage
 
-from yargy_rules import interpret_dict, parser_time, relative_dict, rule_stamps
+from TimeExpressions.yargy_rules import interpret_dict, parser_time, relative_dict, rule_stamps
 
 
 class TimeProcessor:
