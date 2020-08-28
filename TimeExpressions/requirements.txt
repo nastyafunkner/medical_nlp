@@ -1,0 +1,11 @@
+deeppavlov==0.11.0
+dateparser==0.7.6
+rutimeparser==1.1.1
+spacy==2.2.3
+spacy-conll==2.0.0
+spacy-stanza==0.2.3
+stanfordnlp==0.2.0
+stanza==1.0.1
+tensorflow==1.15.2
+torch==1.4.0
+yargy==0.14.0
