@@ -25,7 +25,7 @@ class TimeProcessor:
     """Processing time expression
     This class includes methods for parsing time expression data for future mining.
     It includes methods normalization of time expressions, getting stamps and finding events.
-    Results are available through attributes ent.text, ent._.timestamp, ent._.normal_form, ent._.event.
+    Results are available through attributes ent.text (time expression), ent._.timestamp, ent._.normal_form, ent._.event.
     Parameters
     ----------
     download : bool, (default=True)
@@ -138,7 +138,7 @@ class TimeProcessor:
     def get_timestamp(self, span):
         """
             Get stamp of time expressions.
-            The fucntion checks rules, which found time expression and return time stamp
+            The fucntion checks rules, which found time expression and return time stamp.
             Parameters
             ----------
             span : Spacy Span
@@ -450,7 +450,7 @@ class TimeProcessor:
 
         cut = False
         for child in root.children:
-            if child.dep_ in ["nsubj:pass", "nsubj"] and not event:
+            if child.dep_ in ["nsubj:pass", "nsubj"] and not event and child.text != expr.text:
                 new_root = child
                 if len(list(new_root.children)) > 1 and len(list(new_root.subtree)) > 8:
                     doc = Span(
@@ -536,7 +536,7 @@ class TimeProcessor:
     def post_proccess(self, event):
         """
         Post process time events. 
-        Remove punctiation, second parts of sentences, particullar preps and conjunction.
+        Remove punctiation, second parts of sentences, particullar preps and conjunctions.
         Parameters
         ----------
         span : Spacy Span
@@ -547,7 +547,7 @@ class TimeProcessor:
         event : list
             Processed event.
         """
-        while event[0].pos_ in ["CCONJ", "PUNCT", "PRON"] or event[0].lemma_ in ["по", "от", "после"]:
+        while event[0].pos_ in ["CCONJ", "PUNCT", "PRON"] or event[0].lemma_ in ["по", "от", "после", "около"]:
             event = event[1:]
             if not event:
                 break
@@ -555,6 +555,7 @@ class TimeProcessor:
         while (event) and (
             event[-1].pos_ in ["CCONJ", "PUNCT", "ADP"]
             or event[-1].lemma_ in ["где", "когда", "диагноз"]
+            or event[-1].dep_ in ["conj", "parataxis", "acl:relcl", "advcl"]
         ):
             event = event[:-1]
 
@@ -621,6 +622,8 @@ class TimeProcessor:
         if sentence[-1] != ".":
             sentence = sentence + "."
         sentence = re.sub(r"[А-Яа-я][-–][А-Яа-я]", self.dashrepl, sentence)
+        # devide '1998г' into two tokens  '1998' and 'г'
+        sentence = re.sub(r"\dг", lambda x: x.group(0).replace("г", " г"), sentence)
         return sentence
 
     def process(self, sentence, date=None, birthday=None):
@@ -660,6 +663,9 @@ class TimeProcessor:
             birthday = [birthday]
 
         for sent in range(len(sentence)):
+            if len(sentence[sent]) == 0:
+                sentence[sent] = '.'
+                continue
             sentence[sent] = self.pre_process_sentence(sentence[sent])
 
         # Syntax parsing. It is best to parse in batches of 3-10 sentences. 
@@ -669,7 +675,8 @@ class TimeProcessor:
                 parsed_sentences.append(parse)
 
         for sent in range(len(sentence)):
-
+            if len(sentence[sent]) == 0:
+                continue
             if isinstance(date[sent], str):
                 self.date = datetime.strptime(date[sent], "%Y-%m-%d %H:%M:%S")
             elif isinstance(date[sent], datetime):
