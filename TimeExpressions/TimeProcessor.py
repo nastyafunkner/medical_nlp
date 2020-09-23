@@ -682,7 +682,7 @@ class TimeProcessor:
             elif isinstance(date[sent], datetime):
                 self.date = date[sent]
             elif isinstance(date[sent], type(None)):
-                self.date = datetime.strptime(datetime.now(), "%Y-%m-%d %H:%M:%S")
+                self.date = datetime.now()
             else:
                 raise TypeError("date must be str, datetime or Nonetype")
 
