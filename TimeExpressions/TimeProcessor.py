@@ -72,8 +72,13 @@ class TimeProcessor:
         self.nlp.add_pipe(self.ruler)
 
         self.Span = Span
+        self.Doc = Doc
         self.Span.set_extension("timestamp", getter=self.get_timestamp, force=True)
         if normalize:
+#             self.Doc.set_extension("date", getter=lambda x: self.date, force=True)
+#             self.Doc.set_extension("birthday", getter=lambda x: self.birthday, force=True)
+            self.Doc.set_extension("date", default=None, force=True)
+            self.Doc.set_extension("birthday", default=None, force=True)
             self.Span.set_extension("normal_form", getter=self.get_normal_form, force=True)
         if event:
             self.Span.set_extension("event", getter=self.get_event, force=True)
@@ -227,6 +232,8 @@ class TimeProcessor:
         normal_form : datetime
             Normal form of time expression.
         """
+        self.date = span.doc._.date
+        self.birthday = span.doc._.birthday
         now = datetime.strptime('1990-01-01', "%Y-%m-%d")
         processed_expr_span = self.pre_process_expr(span)
         processed_expr = " ".join(processed_expr_span)
@@ -696,6 +703,8 @@ class TimeProcessor:
                 raise TypeError("birthday must be str, datetime or Nonetype")
 
             self.doc = self.doc_from_conllu(self.nlp.vocab, parsed_sentences[sent].split("\n"))
+            self.doc._.date = self.date
+            self.doc._.birthday = self.birthday
             self.ruler(self.doc)
             docs.append(self.doc)
         return docs
