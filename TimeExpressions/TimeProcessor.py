@@ -1,16 +1,12 @@
-import re
 from datetime import datetime
 
-import dateparser
-import rutimeparser
-import stanza
-from dateparser.search import search_dates
-from dateutil.relativedelta import relativedelta
 from deeppavlov import build_model
 from spacy.pipeline import EntityRuler
 from spacy.tokens import Doc, Span
-from spacy_stanza import StanzaLanguage
-from TimeExpressions.patterns import interpret_dict, patterns
+import patterns
+from spacy.vocab import Vocab
+from spacy.language import Language
+from TimeExpressions.utils import doc_from_conllu, pre_process_sentence, convert_to_dataframe
 
 import logging
 import os
@@ -20,6 +16,7 @@ import tensorflow as tf
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
+
 
 class TimeProcessor:
     """Processing time expression
@@ -62,301 +59,32 @@ class TimeProcessor:
             logging.disable(logging.WARNING)
             os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-        if download:
-            stanza.download('ru')
-
-        self.snlp = stanza.Pipeline(lang="ru", processors='tokenize')
-        self.nlp = StanzaLanguage(self.snlp)
+        self.nlp = Language(Vocab())
         self.ruler = EntityRuler(self.nlp)
-        self.ruler.add_patterns(patterns)
+
+        self.rules = patterns.rules
+        pattern = []
+        for rule in self.rules:
+            pattern.append(
+                {"label": 'EXPR', "pattern": self.rules[rule]['pattern'], "id": rule})
+        self.ruler.add_patterns(pattern)
         self.nlp.add_pipe(self.ruler)
 
         self.Span = Span
         self.Doc = Doc
-        self.Span.set_extension("timestamp", getter=self.get_timestamp, force=True)
+        self.Span.set_extension("timestamp", default=None, force=True)
         if normalize:
-#             self.Doc.set_extension("date", getter=lambda x: self.date, force=True)
-#             self.Doc.set_extension("birthday", getter=lambda x: self.birthday, force=True)
             self.Doc.set_extension("date", default=None, force=True)
             self.Doc.set_extension("birthday", default=None, force=True)
-            self.Span.set_extension("normal_form", getter=self.get_normal_form, force=True)
+            self.Span.set_extension("normal_form", default=None, force=True)
+            self.Span.set_extension("form", default=None, force=True)
+            self.Span.set_extension("uncertain", default=None, force=True)
         if event:
             self.Span.set_extension("event", getter=self.get_event, force=True)
 
-        self.model = build_model("ru_syntagrus_joint_parsing", download=download)
+        self.model = build_model(
+            "ru_syntagrus_joint_parsing", download=download)
         print('Initialization complete!')
-
-    def doc_from_conllu(self, vocab, lines):
-        """
-        Convert conllu string to spacy doc
-        With release of Spacy 3.0 this function can be replaced by build-in method.
-        Parameters
-        ----------
-        vocab : Spacy vocab
-            Spacy model vocabulary.
-        lines : list
-            Sentence in CONLL-U.
-            
-        Returns
-        -------
-        result : Spacy doc
-        """
-        words, spaces, tags, poses, morphs, lemmas = [], [], [], [], [], []
-        heads, deps = [], []
-        for i in range(len(lines)):
-            line = lines[i]
-            parts = line.split("\t")
-            id_, word, lemma, pos, tag, morph, head, dep, _1, misc = parts
-            if "." in id_ or "-" in id_:
-                continue
-            if "SpaceAfter=No" in misc:
-                spaces.append(False)
-            else:
-                spaces.append(True)
-
-            id_ = int(id_) - 1
-            head = (int(head) - 1) if head not in ("0", "_") else id_
-            tag = pos if tag == "_" else tag
-            morph = morph if morph != "_" else ""
-            dep = "ROOT" if dep == "root" else dep
-
-            words.append(word)
-            lemmas.append(lemma)
-            poses.append(pos)
-            tags.append(tag)
-            morphs.append(morph)
-            heads.append(head)
-            deps.append(dep)
-
-        doc = Doc(vocab, words=words, spaces=spaces)
-        for i in range(len(doc)):
-            doc[i].tag_ = tags[i]
-            doc[i].pos_ = poses[i]
-            doc[i].dep_ = deps[i]
-            doc[i].lemma_ = lemmas[i]
-            doc[i].head = doc[heads[i]]
-        doc.is_parsed = True
-        doc.is_tagged = True
-
-        return doc
-
-    def get_timestamp(self, span):
-        """
-            Get stamp of time expressions.
-            The fucntion checks rules, which found time expression and return time stamp.
-            Parameters
-            ----------
-            span : Spacy Span
-                Time expression.
-            Returns
-            -------
-            stamp : int
-                Stamp of time expression:
-                1 - once-time
-                2 - continious
-                3 - repeatable
-                4 - relative
-        """
-        if span.ent_id_ in ["rule_yearfull", 'rule_in_part_yearfull_part_yearfull', 'rule_yearfull_g_prep_time', 'rule_day_month', 'rule_part_month',
-                            'rule_around_int_unit_ago', 'rule_int_unit_ago', 'rule_around_int_unit_ago', 'rule_int_unit_daytime', 'rule_int_daytime_date',
-                            'rule_date_prep_time', 'rule_num_num_year', 'rule_date_year', 'rule_time_year', 'rule_time_unit', 'rule_event_in_time',
-                            'rule_time_hour_date', 'rule_int_dash_int_hour_date', 'rule_in_month_yearfull', 'rule_time_daytime_date', 'rule_daytime_date',
-                            'rule_date_daytime', 'rule_daytime_date', 'rule_int_dash_int_hour', 'rule_date', 'rule_around_time', 'rule_time', 'rule_around_int_h_unit_ago',
-                            'rule_around_int_unit_ago', 'rule_around_numr_unit_ago', 'rule_int_and_int_unit', 'rule_num_yearfull', 'rule_event_daytime',
-                            'rule_events', 'rule_in_age_int_unit', 'rule_unit_int_ago', 'rule_numr_unit_ago', 'rule_unit_ago', 'rule_day_before', 'rule_in_month_dash_month_yearfull_unit']:
-                return 1
-        if span.ent_id_ in ["rule_in_part_yearfull_part_yearfull", 'rule_from_yearfull_unit_till_yearfull_unit', 'rule_from_yearfull_unit_till_yearfull_unit', 
-                            'rule_from_time_till_date', 'rule_yearfull_yearfull_unit', 'rule_last_int_dash_int_unit',
-                            'rule_last_unit', 'rule_from_int_h_unit', 'rule_prep_part_int_dash_h', 'rule_from_int_dash_ti_unit', 'rule_prep_time_dash_time',
-                            'rule_prep_time_dash_date', 'rule_around_int_unit', 'rule_around_numr_unit', 'rule_more_int_unit', 'rule_dur_last_int_com_unit',
-                            'rule_in_last_numr_unit', 'rule_dur_last_unit', 'rule_dur_int_last_unit', 'rule_dur_int_h_unit', 'rule_dur_last_int_h_unit',
-                            'rule_dur_last_adj_unit', 'rule_dur_int_dash_int_unit', 'rule_dur_int_unit', 'rule_dur_numr_unit', 'rule_dur_many_unit',
-                            'rule_dur_unit', 'rule_last_int_unit', 'rule_numr_unit', 'rule_int_month', 'rule_month', 'rule_per_day',
-                            'rule_now', 'rule_before_today', 'rule_dur_last_numr_com_unit']:
-                return 2
-        if span.ent_id_ in ["rule_prep_int_times_in_int_dash_int_unit", 'rule_int_dash_int_times_in_unit', 'rule_int_times_in_int_unit', 'rule_sev_times_in_unit',
-                            'rule_regular']:
-                return 3
-        if span.ent_id_ in ["rule_thr_int_dash_int_unit", 'rule_aft_half_unit', 'rule_aft_unit', 'rule_thr_num_unit', 'rule_thr_int_unit', 'rule_aft_int_unit',
-                            'rule_this_year']:
-                return 4
-        if span.ent_id_.startswith('rule_prep'):
-            if span[0].text.lower() in ['с', 'до']:
-                return 2
-            else:
-                return 1
-
-    def pre_process_expr(self, span):
-        """
-        Preprocess time expressions for parsers.
-        Parameters
-        ----------
-        span : Space Span
-            Time expression.
-        Returns
-        -------
-        processed_expr : str
-            Lemma of time expression without preps and verbs.
-            For words such 'утро','вечер','ночь', 'лет' save the case.
-            Remove stop words such 'год', 'месяц', 'день'.
-        """
-        processed_expr = list()
-        for word in span:
-            if (
-                (word.pos_ not in ["PREP", "ADP", "VERB"])
-                and (word.lemma_.strip() not in ["год", "месяц", "день", 'около', 'течение', 'более', 'Более'])
-                and (str(word) not in ["-", "ти", "х"])
-            ):
-                if word.lemma_.strip() in ["утро", "вечер", "ночь"]:
-                    processed_expr.append(str(word))
-                else:
-                    processed_expr.append(word.lemma_.strip())
-            if str(word) == "лет":
-                processed_expr.append(str(word))
-
-        return processed_expr
-
-    def get_normal_form(self, span):
-        """
-        Normalize time expressions.
-        The function uses dateparser and rutimeparser packages for normalizing the most common time expressions.
-        For particullar time expression it checks rules, which found expression
-        and uses special preprocessing for dateparser and rutimeparser packages
-        or apply its own method of normalization.
-        Parameters
-        ----------
-        span : Spacy Span
-            Time expression.
-        Returns
-        -------
-        normal_form : datetime
-            Normal form of time expression.
-        """
-        self.date = span.doc._.date
-        self.birthday = span.doc._.birthday
-        now = datetime.strptime('1990-01-01', "%Y-%m-%d")
-        processed_expr_span = self.pre_process_expr(span)
-        processed_expr = " ".join(processed_expr_span)
-        lemma_span = [w.lemma_ for w in span]
-        lemma = ' '.join(lemma_span)
-        normal_form = list()
-
-        if span.ent_id_ in ["rule_prep_int_times_in_int_dash_int_unit", 'rule_int_dash_int_times_in_unit', 'rule_int_times_in_int_unit', 'rule_sev_times_in_unit',
-                            'rule_regular', "rule_thr_int_dash_int_unit", 'rule_aft_half_unit', 'rule_aft_unit', 'rule_thr_num_unit', 'rule_thr_int_unit', 
-                            'rule_aft_int_unit','rule_this_year']:
-            return None
-
-        elif span.ent_id_ in ['rule_around_int_unit_ago', 'rule_around_numr_unit_ago']:
-            normal_form = rutimeparser.parse(processed_expr, now=self.date)
-
-        elif span.ent_id_ in ['rule_int_unit_ago', 'rule_numr_unit_ago']:
-            try:
-                normal_form = rutimeparser.parse(lemma, now=self.date)
-            except ValueError:
-                normal_form = dateparser.parse(lemma, settings={"RELATIVE_BASE": self.date})
-
-        elif span.ent_id_ in ["rule_dur_int_unit", 'rule_dur_numr_unit', 'rule_around_int_unit']:
-            expression = " ".join(span.text.split()[-2:]) + " назад"
-            expression = expression.replace(' г ', ' год ')
-            try:
-                normal_form.append(rutimeparser.parse(expression, now=self.date))
-            except ValueError:
-                normal_form.append(
-                    dateparser.parse(expression, settings={"RELATIVE_BASE": self.date})
-                )
-            normal_form.append(self.date)
-
-        elif span.ent_id_ in [
-                "rule_dur_last_int_h_unit",
-                "rule_more_int_unit",
-                "rule_dur_int_h_unit",
-                "rule_dur_last_int_unit",
-                "rule_dur_int_last_unit",
-                'rule_dur_last_int_com_unit',
-                'rule_dur_last_adj_unit',
-                'rule_more_int_unit'
-            ]:
-                digit = int(re.findall(r'\d+', lemma)[0])
-                expression = str(digit) + " " + lemma_span[-1] + " назад"
-                normal_form.append(
-                    dateparser.parse(expression, settings={"RELATIVE_BASE": self.date})
-                )
-                normal_form.append(self.date)
-
-        elif span.ent_id_ in ['rule_dur_last_numr_com_unit', 'rule_last_int_unit']:
-            expression = " ".join(lemma_span[-2:]) + " назад"
-            try:
-                normal_form.append(rutimeparser.parse(expression, now=self.date))
-            except ValueError:
-                normal_form.append(
-                    dateparser.parse(expression, settings={"RELATIVE_BASE": self.date})
-                )
-            normal_form.append(self.date)
-
-        elif span.ent_id_ in ['rule_prep_season_yearfull', 'rule_prep_part_yearfull']:
-            try:
-                normal_form = datetime.strptime(interpret_dict[processed_expr_span[-2]] + processed_expr_span[-1], "%d.%m.%Y")
-            except (KeyError, ValueError):
-                pass
-
-        elif span.ent_id_ in ['rule_prep_numr_unit', 'rule_prep_int_unit']:
-            if lemma_span[0] in ['через', 'несколько', 'спустя', 'черза']:
-                return None
-
-            try:
-                years = int(re.findall(r'\d+', lemma)[0])
-                if lemma_span[-1] in ["год", "лет"] and self.birthday and years < 1900:
-                    normal_form = self.birthday + relativedelta(years=years)
-            except IndexError:
-                pass
-
-        elif span.ent_id_ == "rule_prep_month":
-            normal_form = datetime.strptime(interpret_dict[processed_expr_span[0]] + str(self.date)[:4], "%m.%Y")
-
-        elif span.ent_id_ in "rule_events":
-            normal_form = dateparser.parse(
-                processed_expr,
-                settings={"PREFER_DAY_OF_MONTH": "first", "RELATIVE_BASE": self.date},
-            )
-
-        elif span.ent_id_ == "rule_unit_ago": 
-            lemma = lemma.lower().replace('около', '')
-            normal_form = rutimeparser.parse(lemma, now=self.date)
-
-        elif span.ent_id_ in ["rule_dur_last_unit", "rule_last_unit"]: 
-            expression = lemma_span[-1] + " назад"
-            try:
-                normal_form.append(rutimeparser.parse(expression, now=self.date))
-            except ValueError:
-                normal_form.append(dateparser.parse(expression, settings={"RELATIVE_BASE": self.date}))
-            normal_form.append(self.date)
-
-        if not normal_form: 
-            normal_form = dateparser.parse(
-                processed_expr,
-                settings={"PREFER_DAY_OF_MONTH": "first", "RELATIVE_BASE": now},
-            )
-
-        if not normal_form:
-            normal_form = search_dates(
-                processed_expr,
-                settings={"PREFER_DAY_OF_MONTH": "first", "RELATIVE_BASE": now},
-            )
-            if normal_form:
-                for i in range(len(normal_form)):
-                    normal_form[i] = normal_form[i][1]
-
-        if not normal_form:
-            try:
-                normal_form = rutimeparser.parse(processed_expr, now=now)
-            except ValueError:
-                pass
-
-        if isinstance(normal_form, datetime):
-            normal_form = normal_form.date()
-        elif isinstance(normal_form, list) and len(normal_form) == 1:
-            normal_form = normal_form[0].date()
-        return normal_form
 
     def find_event(self, doc, expr, exprs):
         """
@@ -392,7 +120,8 @@ class TimeProcessor:
                     if not end:
                         end = list(child.subtree)[0].i
                     int_sent = Span(
-                        doc, list(child.subtree)[0].i, list(child.subtree)[-1].i + 1
+                        doc, list(child.subtree)[0].i, list(
+                            child.subtree)[-1].i + 1
                     )
                     internal_sent.append(int_sent)
                     if (
@@ -461,7 +190,8 @@ class TimeProcessor:
                 new_root = child
                 if len(list(new_root.children)) > 1 and len(list(new_root.subtree)) > 8:
                     doc = Span(
-                        doc, list(new_root.subtree)[0].i, list(new_root.subtree)[-1].i + 1
+                        doc, list(new_root.subtree)[0].i, list(
+                            new_root.subtree)[-1].i + 1
                     ).as_doc()
                     root = [w for w in doc if w.head == w][0]
                     cut = True
@@ -539,7 +269,6 @@ class TimeProcessor:
 
         return event
 
-
     def post_proccess(self, event):
         """
         Post process time events. 
@@ -573,7 +302,6 @@ class TimeProcessor:
 
         return event
 
-
     def get_event(self, span):
         """
         Extract event from spacy doc.
@@ -594,46 +322,36 @@ class TimeProcessor:
             event = self.post_proccess(event)
         return " ".join([w.text for w in event])
 
-    def dashrepl(self, matchobj):
+    def get_uncertain(self, ent):
         """
-        Add spaces to dashes.
+        get uncertain for event using rules from petterns file.
         Parameters
         ----------
-        matchobj : re matchobj
-            Pattern match.
-
-        Returns
-        -------
-        sentence : str
-            Processed sentence.
+        ent : Spacy Entity
+            Time expression.
         """
-        if "-" in matchobj.group(0):
-            return matchobj.group(0).replace("-", " - ")
+
+        r_uncertain = self.rules[ent.ent_id_]['uncertain']
+        r_form = self.rules[ent.ent_id_]['form']
+        norm = ent._.normal_form
+        if ent._.form in [[-1,0,1], [None], [-2,0,2]]:
+            if callable(r_uncertain):
+                ent._.uncertain = [norm + r_uncertain(ent) * i for i in r_form]
+            else:
+                ent._.uncertain = [norm + r_uncertain * i for i in r_form if i is not None]
         else:
-            return matchobj.group(0).replace("–", " – ")
+            if callable(r_uncertain):
+                if type(r_uncertain(ent)) is list:
+                    ent._.uncertain = [norm[0] - r_uncertain(ent)[0]] + norm + [norm[1] + r_uncertain(ent)[1]]
+                else:
+                    ent._.uncertain = [norm[0] - r_uncertain(ent)] + norm + [norm[1] + r_uncertain(ent)]
+            else:
+                if type(r_uncertain) is list:
+                    ent._.uncertain = [norm[0] - r_uncertain[0]] + norm + [norm[1] + r_uncertain[1]]
+                else:
+                    ent._.uncertain = [norm[0] - r_uncertain] + norm + [norm[1] + r_uncertain]
 
-    def pre_process_sentence(self, sentence):
-        """
-        Preprocess sentence.
-        Add dots in the end. Add spaces to dashes.
-        Parameters
-        ----------
-        sentence : str
-            Original sentence.
-
-        Returns
-        -------
-        sentence : str
-            Processed sentence.
-        """
-        if sentence[-1] != ".":
-            sentence = sentence + "."
-        sentence = re.sub(r"[А-Яа-я][-–][А-Яа-я]", self.dashrepl, sentence)
-        # devide '1998г' into two tokens  '1998' and 'г'
-        sentence = re.sub(r"\dг", lambda x: x.group(0).replace("г", " г"), sentence)
-        return sentence
-
-    def process(self, sentence, date=None, birthday=None):
+    def process(self, sentence, date=None, birthday=None, to_dataframe=False):
         """
         Process time expressions.
         Parameters
@@ -644,6 +362,8 @@ class TimeProcessor:
             List of dates of observation or date in string or datetime format.
         birth_date : list, str, datetime (default=None)
             List of birth dates or date in string or datetime format.
+        to_dataframe : bool, (default=False)
+            Flag, which allows to convert result to dataframe.
         Returns
         -------
         result : list
@@ -673,9 +393,9 @@ class TimeProcessor:
             if len(sentence[sent]) == 0:
                 sentence[sent] = '.'
                 continue
-            sentence[sent] = self.pre_process_sentence(sentence[sent])
+            sentence[sent] = pre_process_sentence(sentence[sent])
 
-        # Syntax parsing. It is best to parse in batches of 3-10 sentences. 
+        # Syntax parsing. It is best to parse in batches of 3-10 sentences.
         # Otherwise, there may not be enough GPU memory or the parsing speed will be very slow.
         for i in range(0, len(sentence), 3):
             for parse in self.model(sentence[i:i + 3]):
@@ -685,7 +405,7 @@ class TimeProcessor:
             if len(sentence[sent]) == 0:
                 continue
             if isinstance(date[sent], str):
-                self.date = datetime.strptime(date[sent], "%Y-%m-%d %H:%M:%S")
+                self.date = datetime.strptime(date[sent][:-3], "%Y-%m-%d %H:%M")
             elif isinstance(date[sent], datetime):
                 self.date = date[sent]
             elif isinstance(date[sent], type(None)):
@@ -702,9 +422,19 @@ class TimeProcessor:
             else:
                 raise TypeError("birthday must be str, datetime or Nonetype")
 
-            self.doc = self.doc_from_conllu(self.nlp.vocab, parsed_sentences[sent].split("\n"))
+            self.doc = doc_from_conllu(
+                self.nlp.vocab, parsed_sentences[sent].split("\n"))
             self.doc._.date = self.date
             self.doc._.birthday = self.birthday
             self.ruler(self.doc)
+            for ent in self.doc.ents:
+                ent._.normal_form = self.rules[ent.ent_id_]['norm'](ent)
+                ent._.form = self.rules[ent.ent_id_]['form']
+                ent._.timestamp = self.rules[ent.ent_id_]['stamp']
+                self.get_uncertain(ent)
             docs.append(self.doc)
+
+        if to_dataframe == True:
+            return convert_to_dataframe(docs)
+
         return docs
