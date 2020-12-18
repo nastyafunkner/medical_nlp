@@ -90,7 +90,7 @@ def pre_process_sentence(sentence):
     date_r = r'{}[-./,]{}[-./,]{}'.format(day_r, month_r, year4d_r)
     date_my4d_r = r'{}[.-/]{}'.format(month_r, year4d_r)
     date_my2d_r = r'{}[.-/]{}'.format(month_r, year2d_r)
-    time_r = r'{}[-.:-]{}'.format(hour_r, minute_r)
+    time_r = r'{}[-,.:-]{}'.format(hour_r, minute_r)
 
     for i in [r"[-]+", r"[\s]+", r"[,]+", r"[.]+", r"[:]+"]:
         sentence = re.sub(i, lambda x: x.group(0)[0], sentence)

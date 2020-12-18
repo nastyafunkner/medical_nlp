@@ -1,21 +1,14 @@
 from datetime import datetime
-
 from deeppavlov import build_model
 from spacy.pipeline import EntityRuler
 from spacy.tokens import Doc, Span
-import patterns
 from spacy.vocab import Vocab
 from spacy.language import Language
-from TimeExpressions.utils import doc_from_conllu, pre_process_sentence, convert_to_dataframe
 
-import logging
-import os
-import warnings
-
-import tensorflow as tf
-
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True
+from TimeExpressions import time_patterns
+import sys
+sys.path.append("..")
+from utils import doc_from_conllu, convert_to_dataframe
 
 
 class TimeProcessor:
@@ -25,22 +18,21 @@ class TimeProcessor:
     Results are available through attributes ent.text (time expression), ent._.timestamp, ent._.normal_form, ent._.event.
     Parameters
     ----------
-    download : bool, (default=True)
-        Flag, which allows to download Stanza and DeepPavlov model.
     normalize : bool, (default=True)
         Flag, which allows to normalize time expressions.
     event : bool, (default=True)
         Flag, which allows to parse events for time expressions.
-    log : bool, (default=False)
-        Flag, which allows logging.
 
     Examples
     --------
     >>> from TimeExpessions.TimeProcessor import TimeProcessor
+    >>> ffrom syntax.parser import Parser
+    >>> fparser = Parser()
     >>> time_processor = TimeProcessor()
-    >>> doc = time_processor.process(['Около трех лет назад у пациента синусовый ритм был восстановлен ЭИТ.'],
+    >>> doc = time_processor.process(sentence=['Около трех лет назад у пациента синусовый ритм был восстановлен ЭИТ.'],
     ...            date = ['2010-12-22 18:13:14'],
-    ...            birthday = ['1981-06-25 18:11:43'])
+    ...            birthday = ['1981-06-25 18:11:43'],
+    ...            parser = parser)
     >>> ([(ent.text, ent._.timestamp, ent._.normal_form, ent._.event) for ent in doc[0].ents])
 
     [('Около трех лет назад',
@@ -49,20 +41,12 @@ class TimeProcessor:
       'восстановлен синусовый ритм')]
     """
 
-    def __init__(self, download=True, normalize=True, event=True, log=False):
-
-        if not log:
-            warnings.filterwarnings("ignore")
-            warnings.filterwarnings(action="ignore", module="tensorflow")
-            tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-            tf.autograph.set_verbosity(0)
-            logging.disable(logging.WARNING)
-            os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+    def __init__(self, normalize=True, event=True):
 
         self.nlp = Language(Vocab())
         self.ruler = EntityRuler(self.nlp)
 
-        self.rules = patterns.rules
+        self.rules = time_patterns.rules
         pattern = []
         for rule in self.rules:
             pattern.append(
@@ -81,10 +65,6 @@ class TimeProcessor:
             self.Span.set_extension("uncertain", default=None, force=True)
         if event:
             self.Span.set_extension("event", getter=self.get_event, force=True)
-
-        self.model = build_model(
-            "ru_syntagrus_joint_parsing", download=download)
-        print('Initialization complete!')
 
     def find_event(self, doc, expr, exprs):
         """
@@ -334,78 +314,78 @@ class TimeProcessor:
         r_uncertain = self.rules[ent.ent_id_]['uncertain']
         r_form = self.rules[ent.ent_id_]['form']
         norm = ent._.normal_form
-        if ent._.form in [[-1,0,1], [None], [-2,0,2]]:
+        if ent._.form in [[-1, 0, 1], [None], [-2, 0, 2]]:
             if callable(r_uncertain):
                 ent._.uncertain = [norm + r_uncertain(ent) * i for i in r_form]
             else:
-                ent._.uncertain = [norm + r_uncertain * i for i in r_form if i is not None]
+                ent._.uncertain = [norm + r_uncertain *
+                                   i for i in r_form if i is not None]
         else:
             if callable(r_uncertain):
                 if type(r_uncertain(ent)) is list:
-                    ent._.uncertain = [norm[0] - r_uncertain(ent)[0]] + norm + [norm[1] + r_uncertain(ent)[1]]
+                    ent._.uncertain = [
+                        norm[0] - r_uncertain(ent)[0]] + norm + [norm[1] + r_uncertain(ent)[1]]
                 else:
-                    ent._.uncertain = [norm[0] - r_uncertain(ent)] + norm + [norm[1] + r_uncertain(ent)]
+                    ent._.uncertain = [
+                        norm[0] - r_uncertain(ent)] + norm + [norm[1] + r_uncertain(ent)]
             else:
                 if type(r_uncertain) is list:
-                    ent._.uncertain = [norm[0] - r_uncertain[0]] + norm + [norm[1] + r_uncertain[1]]
+                    ent._.uncertain = [norm[0] - r_uncertain[0]
+                                       ] + norm + [norm[1] + r_uncertain[1]]
                 else:
-                    ent._.uncertain = [norm[0] - r_uncertain] + norm + [norm[1] + r_uncertain]
+                    ent._.uncertain = [norm[0] - r_uncertain] + \
+                        norm + [norm[1] + r_uncertain]
 
-    def process(self, sentence, date=None, birthday=None, to_dataframe=False):
+    def process(self, parsed_sentences=None, sentence=None, parser=None, date=None, birthday=None, to_dataframe=False):
         """
         Process time expressions.
         Parameters
         ----------
-        sentences : list, str
-            List of sentences or sentence.
+        sentence : list, str
+            List of sentences or sentence, used if parsed_sentences is not None.
         date : list, str, datetime (default=None)
             List of dates of observation or date in string or datetime format.
         birth_date : list, str, datetime (default=None)
             List of birth dates or date in string or datetime format.
-        to_dataframe : bool, (default=False)
+        to_dataframe : bool (default=False)
             Flag, which allows to convert result to dataframe.
+        parser : object (default=None)
+            Syntax parser, used if parsed_sentences is not None.
+        parsed_sentences : list (default=None)
+            List of parsed senteces, if they are already parsed in conllu format.
         Returns
         -------
         result : list
             List of parsed docs with time expressions, normal forms and stamps.
         """
         docs = list()
-        parsed_sentences = list()
-
-        if date is None:
-            self.dates = datetime.now()
-            self.dates = str(self.dates.strftime("%Y-%m-%d %H:%M:%S"))
-            self.dates = [self.dates] * len(sentence)
-        else:
-            self.dates = date
-
-        if birthday is None:
-            self.birthdays = [None] * len(sentence)
-        else:
-            self.birthdays = birthday
 
         if isinstance(sentence, str):
             sentence = [sentence]
             date = [date]
             birthday = [birthday]
 
-        for sent in range(len(sentence)):
-            if len(sentence[sent]) == 0:
-                sentence[sent] = '.'
-                continue
-            sentence[sent] = pre_process_sentence(sentence[sent])
+        if parsed_sentences == None:
+            parsed_sentences = parser.parse(sentence)
 
-        # Syntax parsing. It is best to parse in batches of 3-10 sentences.
-        # Otherwise, there may not be enough GPU memory or the parsing speed will be very slow.
-        for i in range(0, len(sentence), 3):
-            for parse in self.model(sentence[i:i + 3]):
-                parsed_sentences.append(parse)
+        if date is None:
+            self.dates = datetime.now()
+            self.dates = str(self.dates.strftime("%Y-%m-%d %H:%M:%S"))
+            self.dates = [self.dates] * len(parsed_sentences)
+        else:
+            self.dates = date
 
-        for sent in range(len(sentence)):
-            if len(sentence[sent]) == 0:
+        if birthday is None:
+            self.birthdays = [None] * len(parsed_sentences)
+        else:
+            self.birthdays = birthday
+
+        for sent in range(len(parsed_sentences)):
+            if len(parsed_sentences[sent]) == 0:
                 continue
             if isinstance(date[sent], str):
-                self.date = datetime.strptime(date[sent][:-3], "%Y-%m-%d %H:%M")
+                self.date = datetime.strptime(
+                    date[sent][:-3], "%Y-%m-%d %H:%M")
             elif isinstance(date[sent], datetime):
                 self.date = date[sent]
             elif isinstance(date[sent], type(None)):
