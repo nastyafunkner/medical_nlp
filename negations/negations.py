@@ -86,6 +86,7 @@ class Negator:
         for word in ent:
             if word.lemma_ not in negations and word.tag_ != 'VERB':
                 result.append(word)
+
         return result
 
     def split_sentence(self, word, sent, negation):
@@ -203,8 +204,13 @@ class Negator:
             neg_expr.append([' '.join([i.text for i in ent._.neg_expr if (i is not None) and (i.tag_ != 'PUNCT')]) for ent in doc.ents])
             neg_ent.append([' '.join([i.text for i in ent._.neg_ent]) for ent in doc.ents])
 
+        for i in range(len(neg_ent)):
+            for j in range(len(neg_ent[i])):
+                if neg_ent[i][j] =='':
+                    neg_ent[i][j] = ' None'
+            neg_ent[i] = ', '.join(neg_ent[i])
+
         neg_expr = [', '.join(expr) for expr in neg_expr]
-        neg_ent = [', '.join(event) for event in neg_ent]
 
         df = pd.DataFrame({'sentence': sentences, 'neg_expr': neg_expr, 'neg_ent': neg_ent})
 

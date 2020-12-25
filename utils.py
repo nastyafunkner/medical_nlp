@@ -105,6 +105,8 @@ def pre_process_sentence(sentence):
         0).replace("г.", "г "), sentence)
     sentence = re.sub(r"- х", '', sentence)
     sentence = re.sub(r" х ", ' ', sentence)
+    sentence = re.sub(r"- е", '', sentence)
+    sentence = re.sub(r" е ", ' ', sentence)
     sentence = re.sub(r"(19[0-9][0-9]|20[0-9][0-9])[,]",
                       lambda x: x.group(0).replace(',', ' , '), sentence)
     sentence = re.sub(r"[А-Яа-я][.][А-Яа-я\d]",

@@ -8,8 +8,10 @@ DAYTIME = {"день": 0, "утро": 0, "вечер": 12, "ночь": 0}
 DAYTIMEH = {"день": '12', "утро": '07', "вечер": '18', "ночь": '03'}
 YEAR_PART = {"конец": '15.11.', "начало": '15.02.', "середина": '01.07.'}
 MONTH_PART = {"конец": '28', "начало": '01', "середина": '15'}
+DECADE_PART = {"конец": '8', "начало": '2', "середина": '5'}
 time_unit = ["год", "месяц", "неделя", "день", "час", "полугод", "сутки", "мин", "лет", "г", "мес", "ч", "л",'г.', 'полгода', "минута"]
 time_events = {"сегодня": 0, "вчера": 1, "позавчера": 2}
+future_events = {"завтра": 1, "послезавтра": 2}
 time_regular = ["ежедневно", "ежемесячно", "еженедельно", "ежегодно"]
 MONTHS = {"январь": '15.01.',"февраль": '15.02.',"март": '15.03.',"апрель": '15.04.',"мая": '15.05.',"июнь": '15.06.',"июль": '15.07.',"август": '15.08.',"сентябрь": '15.09.',
     "октябрь": '15.10.',"ноябрь": '15.11.',"декабрь": '15.12.',"янв": '15.01.',"фев": '15.02.',"мар": '15.03.',"апр": '15.04.',"май": '15.05.',"ин": '15.06.',"ил": '15.07.',
@@ -31,7 +33,12 @@ delta_dict = {'год':relativedelta(years=1), 'час':relativedelta(hours=1), 
               'сутки':relativedelta(days=1), 'неделя':relativedelta(weeks=1), 'месяц':relativedelta(months=1),
               'минута':relativedelta(minutes=1)}
 unit = ['день', 'час', 'неделя', 'год', 'месяц', 'сутки']
+weekday = ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресение']
+reg_words = ['ежегодно', 'ежедневно', 'ежемесячно', 'еженедельно', 'ежесуточно']
 digit1d = {'один': 1,'два': 2,'три': 3,'четыре': 4,'пять': 5,'шесть': 6,'семь': 7,'восемь': 8,'девять': 9, 'десять': 10}
+decade = {'нулевой': '01.07.2005','десять': '01.07.2015','двадцать': '01.07.1925','тридцать': '01.07.1935','сорок': '01.07.1945','пятьдесят': '01.07.1955','шестьдесят': '01.07.1965','семьдесят': '01.07.1975','восемьдесят': '01.07.1985', 'девяносто': '01.07.1995'}
+numeric_quart = {'первый': '15.02.', 'второй': '15.05.', 'третий': '15.08.', 'четвертый': '15.11.'}
+numeric_hy = {'первый': '01.04.', 'второй': '01.10.'}
 fuzzy_words = ['около','примерно','приблизительно', 'почти', 'где-то']
 
 day = r'(?:[12][0-9]|3[01]|0?[1-9])'
@@ -138,9 +145,15 @@ rules = {
               'form': triangle,
               'stamp': 1},  
 # 'месяц назад'
-'r_unit_ago': {'pattern': [{"LEMMA": {"IN": unit}}, {"TEXT": "назад"}], 
+'r_unit_ago': {'pattern': [{"LEMMA": {"IN": unit}}, {"TEXT": {"IN": ["назад", "ранее"]}}], 
               'norm': lambda ent: ent.doc._.date-relativedelta(**{relative_dict[ent[0].lemma_]:1}), 
               'uncertain': lambda ent: delta_dict[ent[0].lemma_],
+              'form': triangle,
+              'stamp': 1},
+# в прошлом году
+'r_unit_ago1': {'pattern': [{"LEMMA": "в"}, {"LEMMA": "прошлый"}, {"LEMMA": {"IN": unit}},], 
+              'norm': lambda ent: ent.doc._.date-relativedelta(**{relative_dict[ent[2].lemma_]:1}), 
+              'uncertain': lambda ent: delta_dict[ent[2].lemma_],
               'form': triangle,
               'stamp': 1},
 # 'около месяц назад'
@@ -325,10 +338,70 @@ rules = {
               'uncertain': delta_month,
               'form': triangle,
               'stamp': 1},
+# прошлым летом
+'r_last_season': {'pattern': [{"LEMMA": 'прошлый'}, {"LEMMA": {"IN": list(SEASONS.keys())}}], 
+              'norm': lambda ent: strptime('{}{}'.format(SEASONS[ent[1].lemma_], ent.doc._.date.year-1), '%d.%m.%Y'), 
+              'uncertain': relativedelta(days=45),
+              'form': triangle,
+              'stamp': 1},
+# летом прошлого года
+'r_season_last_year': {'pattern': [{"LEMMA": {"IN": list(SEASONS.keys())}}, {"LEMMA": 'прошлый'}, {"LEMMA": 'год'}], 
+              'norm': lambda ent: strptime('{}{}'.format(SEASONS[ent[0].lemma_], ent.doc._.date.year-1), '%d.%m.%Y'), 
+              'uncertain': relativedelta(days=45),
+              'form': triangle,
+              'stamp': 1},
+# ноябре прошлого года
+'r_month_last_year': {'pattern': [{"LEMMA": {"IN": list(MONTHS.keys())}}, {"LEMMA": 'прошлый'}, {"LEMMA": 'год'}], 
+              'norm': lambda ent: strptime('{}{}'.format(MONTHS[ent[0].lemma_], ent.doc._.date.year-1), '%d.%m.%Y'), 
+              'uncertain': relativedelta(days=15),
+              'form': triangle,
+              'stamp': 1},
 # Зимой 2010 
 'r_season_yeard4d_year': {'pattern': [{"LEMMA": {"IN": list(SEASONS.keys())}}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
               'norm': lambda ent: strptime('{}{}'.format(SEASONS[ent[0].lemma_], ent[1].text), '%d.%m.%Y'), 
               'uncertain': relativedelta(days=45),
+              'form': triangle,
+              'stamp': 1},
+# зима 89 года
+'r_season_yeard2d_year': {'pattern': [{"LEMMA": {"IN": list(SEASONS.keys())}}, {"TEXT": {"REGEX": r'^\d\d$'}}, {"LEMMA": 'год', "OP": "?"}], 
+              'norm': lambda ent: strptime('{}{}'.format(SEASONS[ent[0].lemma_], int(ent[1].text)+1905), '%d.%m.%Y'),
+              'uncertain': relativedelta(years=5),
+              'form': triangle,
+              'stamp': 1},
+# зимой и летом 2001 года
+'r_season_season_yeard4d_year': {'pattern': [{"LEMMA": {"IN": list(SEASONS.keys())}}, {"TEXT": "и"}, {"LEMMA": {"IN": list(SEASONS.keys())}}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
+              'norm': lambda ent: strptime('{}{}'.format(SEASONS[ent[2].lemma_], ent[3].text), '%d.%m.%Y'), 
+              'uncertain': relativedelta(days=45),
+              'form': triangle,
+              'stamp': 1},
+# в первом квартале 2007 года
+'r_in_quart_yeard4d_year': {'pattern': [{"LEMMA": 'в'},  {"LEMMA": {"IN": list(numeric_quart.keys())}}, {"LEMMA": "квартал"}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
+              'norm': lambda ent: strptime('{}{}'.format(numeric_quart[ent[1].lemma_], ent[3].text), '%d.%m.%Y'), 
+              'uncertain': relativedelta(days=45),
+              'form': triangle,
+              'stamp': 1},
+# в первое полугодие 2007 года
+'r_in_halfyear_yeard4d_year': {'pattern': [{"LEMMA": 'в'},  {"LEMMA": {"IN": list(numeric_hy.keys())}}, {"LEMMA": "полугодие"}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
+              'norm': lambda ent: strptime('{}{}'.format(numeric_hy[ent[1].lemma_], ent[3].text), '%d.%m.%Y'), 
+              'uncertain': relativedelta(days=90),
+              'form': triangle,
+              'stamp': 1},
+# в первое полугодие
+'r_in_halfyear': {'pattern': [{"LEMMA": 'в'},  {"LEMMA": {"IN": list(numeric_hy.keys())}}, {"LEMMA": "полугодие"}], 
+              'norm': lambda ent: strptime('{}{}'.format(numeric_hy[ent[1].lemma_], ent.doc._.date.year), '%d.%m.%Y'), 
+              'uncertain': relativedelta(days=90),
+              'form': triangle,
+              'stamp': 1},
+# первый квартал
+'r_quart_yeard4d_year': {'pattern': [{"LEMMA": {"IN": list(numeric_quart.keys())}}, {"LEMMA": "квартал"}], 
+              'norm': lambda ent: strptime('{}{}'.format(numeric_quart[ent[0].lemma_], ent.doc._.date.year), '%d.%m.%Y'), 
+              'uncertain': relativedelta(days=45),
+              'form': triangle,
+              'stamp': 1},
+# первое полугодие
+'r_halfyear_yeard4d_year': {'pattern': [{"LEMMA": {"IN": list(numeric_hy.keys())}}, {"LEMMA": "полугодие"}], 
+              'norm': lambda ent: strptime('{}{}'.format(numeric_hy[ent[0].lemma_], ent.doc._.date.year), '%d.%m.%Y'), 
+              'uncertain': relativedelta(days=90),
               'form': triangle,
               'stamp': 1},
 # 2 декабря 2010
@@ -343,6 +416,24 @@ rules = {
               'uncertain': delta_day,
               'form': triangle,
               'stamp': 1},
+# 1 апреля текущего года
+'r_int_month_now_year': {'pattern': [{"TEXT": {"REGEX": r'^\d$|^\d\d$'}}, {"LEMMA": {"IN": list(MONTHS.keys())}}, {"LEMMA": "текущий"}, {"LEMMA": "год"}], 
+              'norm': lambda ent: strptime('{}{}{}'.format(ent[0].text, MONTHS[ent[1].lemma_][2:], ent.doc._.date.year), '%d.%m.%Y'), 
+              'uncertain': delta_day,
+              'form': triangle,
+              'stamp': 1},
+# ночью 9 июля
+'r_daytime_int_month': {'pattern': [{"LEMMA": {"IN": list(DAYTIME.keys())}}, {"TEXT": {"REGEX": r'^\d$|^\d\d$'}}, {"LEMMA": {"IN": list(MONTHS.keys())}}], 
+              'norm': lambda ent: strptime('{}{}{} {}'.format(ent[1].text, MONTHS[ent[2].lemma_][2:], ent.doc._.date.year, DAYTIMEH[ent[0].lemma_]), '%d.%m.%Y %H'), 
+              'uncertain': delta_day,
+              'form': triangle,
+              'stamp': 1},
+# между 5 и 17 июня
+'r_bet_int_int_month': {'pattern': [{"LEMMA": 'между'}, {"TEXT": {"REGEX": r'^\d$|^\d\d$'}}, {"LEMMA": 'и'}, {"TEXT": {"REGEX": r'^\d$|^\d\d$'}}, {"LEMMA": {"IN": list(MONTHS.keys())}}], 
+              'norm': lambda ent: strptime('{}{}{}'.format(round((int(ent[1].text)+int(ent[3].text))/2), MONTHS[ent[1].lemma_][2:], ent.doc._.date.year), '%d.%m.%Y'), 
+              'uncertain': lambda ent: relativedelta(days=round((int(ent[1].text)+int(ent[3].text))/2)),
+              'form': triangle,
+              'stamp': 1},
 # в конце января 2011
 'r_in_monthpart_month_year4d': {'pattern': [{"LEMMA": 'в'}, {"LEMMA": {"IN": list(YEAR_PART.keys())}}, {"LEMMA": {"IN": list(MONTHS.keys())}}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
               'norm': lambda ent: strptime('{}{}{}'.format(MONTH_PART[ent[1].lemma_],MONTHS[ent[2].lemma_][2:], ent[3].lemma_), '%d.%m.%Y'), 
@@ -352,6 +443,12 @@ rules = {
 # конец января 2011
 'r_monthpart_month_year4d': {'pattern': [{"LEMMA": {"IN": list(YEAR_PART.keys())}}, {"LEMMA": {"IN": list(MONTHS.keys())}}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
               'norm': lambda ent: strptime('{}{}{}'.format(MONTH_PART[ent[0].lemma_],MONTHS[ent[1].lemma_][2:], ent[2].lemma_), '%d.%m.%Y'), 
+              'uncertain': relativedelta(days=15),
+              'form': triangle,
+              'stamp': 1},
+# конец января
+'r_monthpart_month': {'pattern': [{"LEMMA": {"IN": list(YEAR_PART.keys())}}, {"LEMMA": {"IN": list(MONTHS.keys())}}], 
+              'norm': lambda ent: strptime('{}{}{}'.format(MONTH_PART[ent[0].lemma_],MONTHS[ent[1].lemma_][2:], ent.doc._.date.year), '%d.%m.%Y'), 
               'uncertain': relativedelta(days=15),
               'form': triangle,
               'stamp': 1},
@@ -457,6 +554,12 @@ rules = {
               'uncertain': delta_hour*2,
               'form': triangle,
               'stamp': 1},
+# сегодня вечером
+'r_event_daytime': {'pattern': [{"LEMMA": {"IN": list(time_events.keys())}}, {"LEMMA": {"IN": list(DAYTIME.keys())}}], 
+              'norm': lambda ent: strptime('{} {}'.format(ent.doc._.date.date()-delta_day*time_events[ent[0].lemma_], DAYTIMEH[ent[1].lemma_]), '%Y-%m-%d %H'), 
+              'uncertain': delta_hour*2,
+              'form': triangle,
+              'stamp': 1},
 # сегодня
 'r_event': {'pattern': [{"LEMMA": {"IN": list(time_events.keys())}}], 
               'norm': lambda ent: strptime('{} 12.00'.format(ent.doc._.date.date()-delta_day*time_events[ent[0].lemma_]), '%Y-%m-%d %H.%M'), 
@@ -535,9 +638,45 @@ rules = {
               'uncertain': delta_day,
               'form': triangle,
               'stamp': 1},
+# в девяностые годы
+'r_in_decade_year': {'pattern': [{"LEMMA": "в"}, {"LEMMA": {"IN": list(decade.keys())}}, {"TEXT": {"IN": ['годах', 'годы']}}], 
+              'norm': lambda ent: strptime('{}'.format(decade[ent[1].lemma_]), '%d.%m.%Y'),
+              'uncertain': relativedelta(years=5),
+              'form': triangle,
+              'stamp': 1},
 # в 90-х годах
-'r_in_int_h_year': {'pattern': [{"LEMMA": "в"}, {"TEXT": {"REGEX": r'^\d\d\d\d$|^\d\d$'}}, {"TEXT": {"IN": ['годах', 'годы']}}], 
+'r_in_int_h_2dyear': {'pattern': [{"LEMMA": "в"}, {"TEXT": {"REGEX": r'^\d\d$'}}, {"TEXT": {"IN": ['годах', 'годы']}}], 
               'norm': lambda ent: strptime('01.07.{}'.format(int(ent[1].text)+1905), '%d.%m.%Y'),
+              'uncertain': relativedelta(years=5),
+              'form': triangle,
+              'stamp': 1},
+# в 1990-х годах
+'r_in_int_h_4dyear': {'pattern': [{"LEMMA": "в"}, {"TEXT": {"REGEX": r'^\d\d\d\d$'}}, {"TEXT": {"IN": ['годах', 'годы']}}], 
+              'norm': lambda ent: strptime('01.07.{}'.format(int(ent[1].text)+5), '%d.%m.%Y'),
+              'uncertain': relativedelta(years=5),
+              'form': triangle,
+              'stamp': 1},
+# девяностые годы
+'r_decade_year': {'pattern': [{"LEMMA": {"IN": list(decade.keys())}}, {"TEXT": {"IN": ['годах', 'годы']}}], 
+              'norm': lambda ent: strptime('{}'.format(decade[ent[0].lemma_]), '%d.%m.%Y'),
+              'uncertain': relativedelta(years=5),
+              'form': triangle,
+              'stamp': 1},
+# начало девяностых годов
+'r_part_decade_year': {'pattern': [{"LEMMA": {"IN": list(DECADE_PART.keys())}}, {"LEMMA": {"IN": list(decade.keys())}}, {"TEXT": {"IN": ['годах', 'годы']}}], 
+              'norm': lambda ent: strptime('{}'.format(decade[ent[0].lemma_][-1]+DECADE_PART[ent[0].lemma_]), '%d.%m.%Y'),
+              'uncertain': relativedelta(years=5),
+              'form': triangle,
+              'stamp': 1},
+# 90-х годах
+'r_int_h_2dyear': {'pattern': [{"TEXT": {"REGEX": r'^\d\d$'}}, {"TEXT": {"IN": ['годах', 'годы']}}], 
+              'norm': lambda ent: strptime('01.07.{}'.format(int(ent[0].text)+1905), '%d.%m.%Y'),
+              'uncertain': relativedelta(years=5),
+              'form': triangle,
+              'stamp': 1},
+# 1990-х годах
+'r_int_h_4dyear': {'pattern': [{"TEXT": {"REGEX": r'^\d\d\d\d$'}}, {"TEXT": {"IN": ['годах', 'годы']}}], 
+              'norm': lambda ent: strptime('01.07.{}'.format(int(ent[0].text)+5), '%d.%m.%Y'),
               'uncertain': relativedelta(years=5),
               'form': triangle,
               'stamp': 1},
@@ -703,64 +842,70 @@ rules = {
 ########## BEFORE RULES ##########
 # до 9 мая 2010
 'r_before_int_month_yeard4d_year': {'pattern': [{"LEMMA": 'до'}, {"_": {"is_digit": True}}, {"LEMMA": {"IN": list(MONTHS.keys())}}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
-              'norm': lambda ent: strptime('{}{}{}'.format(ent[1].text, MONTHS[ent[2].lemma_][2:], ent[3].text), '%d.%m.%Y'), 
-              'uncertain': delta_day,
-              'form': triangle,
+              'norm': lambda ent: [ent.doc._.birthday, strptime('{}{}{}'.format(ent[1].text, MONTHS[ent[2].lemma_][2:], ent[3].text), '%d.%m.%Y')], 
+              'uncertain': [relativedelta(days=0), delta_day],
+              'form': trapezoid,
               'stamp': 2},
 # до 5-6 декабря 2009
 'r_before_int_dash_int_month_yeard4d_year': {'pattern': [{"LEMMA": 'до'}, {"TEXT": {"REGEX": range_r}}, {"LEMMA": {"IN": list(MONTHS.keys())}}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
-              'norm': lambda ent: strptime('{}{}{}'.format(ent[1][0].text, MONTHS[ent[2].lemma_][2:], ent[3].text), '%d.%m.%Y'), 
-              'uncertain': delta_day,
-              'form': triangle,
+              'norm': lambda ent: [ent.doc._.birthday, strptime('{}{}{}'.format(ent[1][0].text, MONTHS[ent[2].lemma_][2:], ent[3].text), '%d.%m.%Y')], 
+              'uncertain': [relativedelta(days=0), delta_day],
+              'form': trapezoid,
               'stamp': 2},
 # до сентября
 'r_before_month': {'pattern': [{"LEMMA": 'до'}, {"LEMMA": {"IN": list(MONTHS.keys())}}], 
-              'norm': lambda ent: strptime('{}{}'.format(MONTHS[ent[1].lemma_], ent.doc._.date.year), '%d.%m.%Y'), 
-              'uncertain': delta_month,
-              'form': triangle,
+              'norm': lambda ent: [ent.doc._.birthday, strptime('{}{}'.format(MONTHS[ent[1].lemma_], ent.doc._.date.year), '%d.%m.%Y')], 
+              'uncertain': [relativedelta(days=0), delta_month],
+              'form': trapezoid,
               'stamp': 2},
 # до декабря 2009
 'r_before_month_year': {'pattern': [{"LEMMA": 'до'}, {"LEMMA": {"IN": list(MONTHS.keys())}}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
-              'norm': lambda ent: strptime('{}{}'.format(MONTHS[ent[1].lemma_], ent[2].text), '%d.%m.%Y'), 
-              'uncertain': delta_month,
-              'form': triangle,
+              'norm': lambda ent: [ent.doc._.birthday, strptime('{}{}'.format(MONTHS[ent[1].lemma_], ent[2].text), '%d.%m.%Y')], 
+              'uncertain': [relativedelta(days=0), delta_month],
+              'form': trapezoid,
               'stamp': 2},
 # до сегодняшнего дня
 'r_before_today': {'pattern': [{"LEMMA": 'до'}, {"TEXT": "сегодняшнего"}, {"TEXT": "дня"}], 
-              'norm': lambda ent: ent.doc._.date, 
-              'uncertain': delta_day,
-              'form': triangle,
+              'norm': lambda ent: [ent.doc._.birthday, ent.doc._.date], 
+              'uncertain': [relativedelta(days=0), delta_month],
+              'form': trapezoid,
               'stamp': 2},
 # до 2006 года	
 'r_before_int_yeard4d_year': {'pattern': [{"LEMMA": 'до'}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
-              'norm': lambda ent: strptime('01.07.{}'.format(ent[1].text), '%d.%m.%Y'),
-              'uncertain': delta_year,
-              'form': triangle,
+              'norm': lambda ent: [ent.doc._.birthday, strptime('01.07.{}'.format(ent[1].text), '%d.%m.%Y')],
+              'uncertain': [relativedelta(days=0), delta_year],
+              'form': trapezoid,
               'stamp': 2},
 # до 9.01.2011	
 'r_before_date': {'pattern': [{"LEMMA": 'до'}, {"TEXT": {"REGEX": date}}, {"LEMMA": 'год', "OP": "?"}], 
-              'norm': lambda ent: strptime(ent[1].text, '%d.%m.%Y'), 
-              'uncertain': delta_day,
-              'form': triangle,
+              'norm': lambda ent: [ent.doc._.birthday, strptime(ent[1].text, '%d.%m.%Y')], 
+              'uncertain': [relativedelta(days=0), delta_day],
+              'form': trapezoid,
               'stamp': 2},
 # до 9.01.11	
 'r_before_shortdate': {'pattern': [{"LEMMA": 'до'}, {"TEXT": {"REGEX": shortdate}}, {"LEMMA": 'год', "OP": "?"}], 
-              'norm': lambda ent: strptime(ent[1].text, '%d.%m.%y'), 
-              'uncertain': delta_day,
-              'form': triangle,
+              'norm': lambda ent: [ent.doc._.birthday, strptime(ent[1].text, '%d.%m.%y')], 
+              'uncertain': [relativedelta(days=0), delta_day],
+              'form': trapezoid,
               'stamp': 2},
 # к 29.12	
 'r_before_day_month': {'pattern': [{"LEMMA": 'к'}, {"TEXT": {"REGEX": r'^{}.{}$'.format(day,month)}}], 
-              'norm': lambda ent: strptime('{}.{}'.format(ent[1].text, ent.doc._.date.year), '%d.%m.%Y'), 
-              'uncertain': delta_day,
-              'form': triangle,
+              'norm': lambda ent: [ent.doc._.birthday, strptime('{}.{}'.format(ent[1].text, ent.doc._.date.year), '%d.%m.%Y')], 
+              'uncertain': [relativedelta(days=0), delta_day],
+              'form': trapezoid,
               'stamp': 2},
 # до середины ноября 2011
 'r_before_monthpart_month_year4d': {'pattern': [{"LEMMA": 'до'}, {"LEMMA": {"IN": list(YEAR_PART.keys())}}, {"LEMMA": {"IN": list(MONTHS.keys())}}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
-              'norm': lambda ent: strptime('{}{}{}'.format(MONTH_PART[ent[1].lemma_],MONTHS[ent[2].lemma_][2:], ent[3].lemma_), '%d.%m.%Y'), 
-              'uncertain': relativedelta(days=15),
-              'form': triangle,
-              'stamp': 1},
+              'norm': lambda ent: [ent.doc._.birthday, strptime('{}{}{}'.format(MONTH_PART[ent[1].lemma_],MONTHS[ent[2].lemma_][2:], ent[3].lemma_), '%d.%m.%Y')], 
+              'uncertain': [relativedelta(days=0), relativedelta(days=15)],
+              'form': trapezoid,
+              'stamp': 2},
+# до 5 июня
+'r_before_int_month': {'pattern': [{"LEMMA": 'до'}, {"_": {"is_digit": True}}, {"LEMMA": {"IN": list(MONTHS.keys())}}], 
+              'norm': lambda ent: [ent.doc._.birthday, strptime('{}{}{}'.format(ent[1].text, MONTHS[ent[2].lemma_][2:], ent.doc._.date.year), '%d.%m.%Y')], 
+              'uncertain': [relativedelta(days=0), delta_day],
+              'form': trapezoid,
+              'stamp': 2},
 
 ########## AGE RULES ##########
 # с 12 - ти лет
@@ -1207,10 +1352,22 @@ rules = {
               'uncertain': lambda ent: [delta_dict[ent[1].lemma_]*int(digit1d[ent[0].lemma_]), relativedelta(days=0)],
               'form': trapezoid,
               'stamp': 2},
+# почти пять дней
+'r_almost_int_unit': {'pattern': [{"LEMMA": "почти"}, {"_": {"is_digit": True}}, {"LEMMA": {"IN": ['день', 'час', 'неделя', 'месяц', 'сутки']}}],
+              'norm': lambda ent: [ent.doc._.date-relativedelta(**{relative_dict[ent[2].lemma_]:int(ent[1].text)}), ent.doc._.date], 
+              'uncertain': lambda ent: [delta_dict[ent[2].lemma_], relativedelta(days=0)], #*int(ent[0].text)
+              'form': trapezoid,
+              'stamp': 2},
+# почти 20 дней
+'r_almost_num_unit': {'pattern': [{"LEMMA": "почти"}, {"LEMMA": {"IN": list(digit1d.keys())}}, {"LEMMA": {"IN": ['день', 'час', 'неделя', 'месяц', 'сутки']}}],
+              'norm': lambda ent: [ent.doc._.date-relativedelta(**{relative_dict[ent[2].lemma_]:int(digit1d[ent[1].lemma_])}), ent.doc._.date], 
+              'uncertain': lambda ent: [delta_dict[ent[2].lemma_], relativedelta(days=0)],
+              'form': trapezoid,
+              'stamp': 2},
 # 3 года
 'r_int_year': {'pattern': [{"TEXT": {"REGEX": r'^\d$'}}, {"TEXT": {"IN": ['года', 'лет']}}],
               'norm': lambda ent: [ent.doc._.date-relativedelta(**{relative_dict[ent[1].lemma_]:int(ent[0].text)}), ent.doc._.date], 
-              'uncertain': lambda ent: [delta_dict[ent[1].lemma_]*1, relativedelta(days=0)],
+              'uncertain': lambda ent: [delta_year, relativedelta(days=0)],
               'form': trapezoid,
               'stamp': 2},
 
@@ -1359,15 +1516,71 @@ rules = {
               'uncertain': None,
               'form': [None],
               'stamp': 3},
+# eжегодно
+'r_reg_words': {'pattern': [{"LEMMA": {"IN": reg_words}}], 
+              'norm': lambda ent: None, 
+              'uncertain': None,
+              'form': [None],
+              'stamp': 3},
+# по утрам
+'r_at_daytime': {'pattern': [{"LEMMA": "по"}, {"LEMMA": {"IN": list(DAYTIME.keys())}}], 
+              'norm': lambda ent: None, 
+              'uncertain': None,
+              'form': [None],
+              'stamp': 3},
+
+########## RULES WITH WEEKDAY ##########
+# в понедельник
+'r_in_weekday': {'pattern': [{"LEMMA": "в", "OP": "?"}, {"LEMMA": {"IN": weekday}}], 
+              'norm': lambda ent: None, 
+              'uncertain': None,
+              'form': [None],
+              'stamp': 1},
+# вечером во вторник	
+'r_daytime_in_weekday': {'pattern': [{"LEMMA": {"IN": list(DAYTIME.keys())}}, {"TEXT": "во"}, {"LEMMA": {"IN": weekday}}], 
+              'norm': lambda ent: None, 
+              'uncertain': None,
+              'form': [None],
+              'stamp': 1},
+# в четверг вечером	
+'r_in_weekday_daytime': {'pattern': [{"LEMMA": "в", "OP": "?"}, {"LEMMA": {"IN": weekday}}, {"LEMMA": {"IN": list(DAYTIME.keys())}}], 
+              'norm': lambda ent: None, 
+              'uncertain': None,
+              'form': [None],
+              'stamp': 1},
+# в пятницу, 13 октября
+'r_in_weekday_sep_day_month': {'pattern': [{"LEMMA": "в"}, {"LEMMA": {"IN": weekday}}, {"TEXT": ","}, {"TEXT": {"REGEX": r'^\d$|^\d\d$'}}, {"LEMMA": {"IN": list(MONTHS.keys())}}], 
+              'norm': lambda ent: strptime('{}{}{}'.format(ent[3].text, MONTHS[ent[4].lemma_][2:], ent.doc._.date.year), '%d.%m.%Y'), 
+              'uncertain': delta_day,
+              'form': triangle,
+              'stamp': 1},
+# в пятницу, 13 октября 2009 года
+'r_in_weekday_sep_day_month_year': {'pattern': [{"LEMMA": "в"}, {"LEMMA": {"IN": weekday}}, {"TEXT": ","}, {"TEXT": {"REGEX": r'^\d$|^\d\d$'}}, {"LEMMA": {"IN": list(MONTHS.keys())}}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
+              'norm': lambda ent: strptime('{}{}{}'.format(ent[3].text, MONTHS[ent[4].lemma_][2:], ent[5].text), '%d.%m.%Y'), 
+              'uncertain': delta_day,
+              'form': triangle,
+              'stamp': 1},
+# в пятницу 13 октября
+'r_in_weekday_day_month': {'pattern': [{"LEMMA": "в"}, {"LEMMA": {"IN": weekday}}, {"TEXT": {"REGEX": r'^\d$|^\d\d$'}}, {"LEMMA": {"IN": list(MONTHS.keys())}}], 
+              'norm': lambda ent: strptime('{}{}{}'.format(ent[2].text, MONTHS[ent[3].lemma_][2:], ent.doc._.date.year), '%d.%m.%Y'), 
+              'uncertain': delta_day,
+              'form': triangle,
+              'stamp': 1},
+# в пятницу 13 октября 2009 года
+'r_in_weekday_day_month_year': {'pattern': [{"LEMMA": "в"}, {"LEMMA": {"IN": weekday}}, {"TEXT": {"REGEX": r'^\d$|^\d\d$'}}, {"LEMMA": {"IN": list(MONTHS.keys())}}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
+              'norm': lambda ent: strptime('{}{}{}'.format(ent[2].text, MONTHS[ent[3].lemma_][2:], ent[4].text), '%d.%m.%Y'), 
+              'uncertain': delta_day,
+              'form': triangle,
+              'stamp': 1},
 
 ########## RULES WITHOUT NORMAL FORM ##########
 # 'несколько лет'
 'r_sev_years': {'pattern': [{"LEMMA": "несколько"}, {"LEMMA": {"IN": time_unit}}], 
-              'norm': lambda ent: None, 
-              'uncertain': None,
-              'form': [None],
+              'norm': lambda ent: [ent.doc._.date-delta_year*3, ent.doc._.date], 
+              'uncertain': [delta_year, relativedelta(days=0)],
+              'form': trapezoid,
               'stamp': 2},
-# с 16.00
+    
 'r_from_time': {'pattern': [{"LEMMA": 'с'}, {"TEXT": {"REGEX": time}}], 
               'norm': lambda ent: None, 
               'uncertain': None,
@@ -1399,4 +1612,38 @@ rules = {
               'uncertain': delta_day,
               'form': triangle,
               'stamp': 2},
+# на сегодняшний день
+'r_now1': {'pattern': [{"LEMMA": 'на'}, {"LEMMA": "сегодняшний"}, {"LEMMA": "день"}],
+              'norm': lambda ent: ent.doc._.date, 
+              'uncertain': delta_day,
+              'form': triangle,
+              'stamp': 1},
+
+########## FUTURE RULES ##########
+# завтра
+'r_future_events': {'pattern': [{"LEMMA": {"IN": list(future_events.keys())}}],
+              'norm': lambda ent: ent.doc._.date+relativedelta(days=future_events[ent[0].lemma_]), 
+              'uncertain': delta_day,
+              'form': triangle,
+              'stamp': 1},
+# завтра днем
+'r_future_events_daytime': {'pattern': [{"LEMMA": {"IN": list(future_events.keys())}}, {"LEMMA": {"IN": list(DAYTIME.keys())}}],
+              'norm': lambda ent: strptime('{} {}'.format((ent.doc._.date+relativedelta(days=future_events[ent[0].lemma_])).date(), DAYTIMEH[ent[1].lemma_]), '%Y-%m-%d %H'), 
+              'uncertain': delta_day,
+              'form': triangle,
+              'stamp': 1},
+# на завтра
+'r_on_future_events': {'pattern': [{"LEMMA": 'на'}, {"LEMMA": {"IN": list(future_events.keys())}}],
+              'norm': lambda ent: ent.doc._.date+relativedelta(days=future_events[ent[1].lemma_]), 
+              'uncertain': delta_day,
+              'form': triangle,
+              'stamp': 1},
+# в следующем году
+'r_next_unit': {'pattern': [{"LEMMA": 'в'}, {"LEMMA": {"IN": ["прошлый", "будущий"]}}, {"LEMMA": {"IN": unit}}],
+              'norm': lambda ent: ent.doc._.date+relativedelta(**{relative_dict[ent[2].lemma_]:1}), 
+              'uncertain': lambda ent: delta_dict[ent[2].lemma_],
+              'form': triangle,
+              'stamp': 1},
+
 }
+

@@ -336,7 +336,7 @@ class TimeProcessor:
                     ent._.uncertain = [norm[0] - r_uncertain] + \
                         norm + [norm[1] + r_uncertain]
 
-    def process(self, parsed_sentences=None, sentence=None, parser=None, date=None, birthday=None, to_dataframe=False):
+    def process(self, parsed_sentences=None, sentence=None, parser=None, date=None, birthday=None, to_dataframe=False, save=False):
         """
         Process time expressions.
         Parameters
@@ -353,6 +353,8 @@ class TimeProcessor:
             Syntax parser, used if parsed_sentences is not None.
         parsed_sentences : list (default=None)
             List of parsed senteces, if they are already parsed in conllu format.
+        to_dataframe : bool (default=False)
+            Flag, which allows to save result of parsing in conllu format.
         Returns
         -------
         result : list
@@ -366,7 +368,7 @@ class TimeProcessor:
             birthday = [birthday]
 
         if parsed_sentences == None:
-            parsed_sentences = parser.parse(sentence)
+            parsed_sentences = parser.parse(sentence, save=save)
 
         if date is None:
             self.dates = datetime.now()
@@ -376,28 +378,33 @@ class TimeProcessor:
             self.dates = date
 
         if birthday is None:
-            self.birthdays = [None] * len(parsed_sentences)
+            self.birthdays = datetime.now()
+            self.birthdays = str(self.birthdays.strftime("%Y-%m-%d %H:%M:%S"))
+            self.birthdays = [self.birthdays] * len(parsed_sentences)
         else:
             self.birthdays = birthday
 
         for sent in range(len(parsed_sentences)):
             if len(parsed_sentences[sent]) == 0:
                 continue
-            if isinstance(date[sent], str):
+            if isinstance(self.dates[sent], str):
                 self.date = datetime.strptime(
-                    date[sent][:-3], "%Y-%m-%d %H:%M")
-            elif isinstance(date[sent], datetime):
-                self.date = date[sent]
-            elif isinstance(date[sent], type(None)):
+                    self.dates[sent][:-3], "%Y-%m-%d %H:%M")
+            elif isinstance(self.dates[sent], datetime):
+                self.date = self.dates[sent]
+            elif isinstance(self.dates[sent], type(None)):
                 self.date = datetime.now()
             else:
                 raise TypeError("date must be str, datetime or Nonetype")
 
-            if isinstance(birthday[sent], str):
-                self.birthday = datetime.strptime(birthday[sent], "%Y-%m-%d")
-            elif isinstance(birthday[sent], datetime):
-                self.birthday = birthday[sent]
-            elif isinstance(birthday[sent], type(None)):
+            if isinstance(self.birthdays[sent], str):
+                try:
+                    self.birthday = datetime.strptime(self.birthdays[sent], "%Y-%m-%d")
+                except ValueError:
+                    self.birthday = datetime.strptime(self.birthdays[sent][:-3], "%Y-%m-%d %H:%M")
+            elif isinstance(self.birthdays[sent], datetime):
+                self.birthday = self.birthdays[sent]
+            elif isinstance(self.birthdays[sent], type(None)):
                 self.birthday = None
             else:
                 raise TypeError("birthday must be str, datetime or Nonetype")
