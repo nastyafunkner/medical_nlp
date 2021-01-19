@@ -10,7 +10,9 @@ import sys
 sys.path.append("..")
 from utils import doc_from_conllu
 
+# negative particles
 negations = ['не', 'нет', 'отрицать', 'отсутствовать', 'без', 'избегать', 'отказаться']
+# types of dependencies corresponding to relative clauses
 conj = ["conj", "parataxis", "acl:relcl", "advcl"]
 
 class Negator:
@@ -141,6 +143,7 @@ class Negator:
         head = negation.head
         filter = lambda root, excp: [w for w in root.children if (w.dep_ != 'punct') and (w != excp)]
 
+        # special rule for searching expression for particles 'отрицать', 'отказаться', 'нет'
         if negation.lemma_ in ['отрицать', 'отказаться', 'нет']:
             for child in negation.children:
                 if child.dep_ in ['nsubj', 'nsubj:pass', 'obj']:
@@ -149,17 +152,20 @@ class Negator:
                 if child.dep_ in ['obl']:
                     return [negation] + list(child.subtree)
 
+        # check for branches with dependecies 'nsubj', 'nsubj:pass', 'obj'
         for child in head.children:
             if child.dep_ in ['nsubj', 'nsubj:pass', 'obj']:
                 if 'conj' not in [w.dep_ for w in child.children]:
                     return [negation, head] + list(child.subtree)
                 else:
                     return [negation, head, child]
-
+        
+        # Determining which part of the sentence the expression is in.
         if head.dep_ in conj:
             sent, head, negation = self.split_sentence(head, sent, negation)
             head = [i for i in sent if i.text == head.text][0]
 
+        # Checking whether clauses remain in the sentence
         for word in head.subtree:
             if word.dep_ in conj:
                 indexes = [w.i for w in word.subtree]
@@ -171,6 +177,7 @@ class Negator:
                 negation = [w for w in sent if w.text == negation.text][0]
                 break
 
+        # special rule for searching expression for nouns
         if head.pos_ == 'NOUN':
             if len(list(head.children)) == 1:
                 return [negation, head, head.head] + filter(head.head, head)
@@ -178,6 +185,7 @@ class Negator:
                 if child.dep_ in ['nsubj', 'nsubj:pass', 'obj']:
                     return [negation, head, child]
 
+        # in other case extraact all dependent words
         if len(list(head.children)) < 3:
             return [w for w in head.subtree if w.dep_ not in ['conj', 'punct']]
 
@@ -222,11 +230,11 @@ class Negator:
         Parameters
         ----------
         sentence : list, str
-            List of sentences or sentence, used if parsed_sentences is not None.
+            List of sentences or sentence, used if parsed_sentences is None.
         to_dataframe : bool (default=False)
             Flag, which allows to convert result to dataframe.
         parser : object (default=None)
-            Syntax parser, used if parsed_sentences is not None.
+            Syntax parser, used if parsed_sentences is None.
         parsed_sentences : list (default=None)
             List of parsed senteces, if they are already parsed in conllu format.
         Returns

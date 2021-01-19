@@ -87,7 +87,7 @@ class TimeProcessor:
         event = list()
         time_root = expr.root
 
-        # поиск придаточного предложения
+        # search for a relative clause
         internal_sent = list()
         end = None
         if time_root.text != root.text:
@@ -129,7 +129,7 @@ class TimeProcessor:
             if not any(child.text == word.text for word in all_expr):
                 root = child
 
-        # Извлечение события, если оно внутри дерева образованного ВК
+        # Extracting an event if it is inside the tree of the formed temporal exprssion 
         if time_root and time_root.text != root.text:
             for w in time_root.subtree:
                 if (
@@ -143,7 +143,7 @@ class TimeProcessor:
         if event:
             return event
 
-        # если в предложении мало ветвей
+        # if the sentence has few branches
         if len([i for i in root.children]) <= 2:
             for w in root.subtree:
                 if (
@@ -155,7 +155,7 @@ class TimeProcessor:
             if event:
                 return event
 
-        # поиск необходимых типов связей
+        # search for required types of links
         if root.pos_ == "VERB":
             for child in root.children:
                 if child.dep_ == "xcomp":
@@ -194,7 +194,7 @@ class TimeProcessor:
             else:
                 return event
 
-        # если в предложении много неглубоких ветвей
+        # if there are many shallow branches in the sentence
         words = list()
         for w in root.subtree:
             if (
@@ -208,7 +208,7 @@ class TimeProcessor:
             event.extend(words)
             return event
 
-        # если ВК внутри сложной конструкции, то разбиваем на конрукции попроще
+        # if the temporal exprssion is inside a complex structure, then we break it down into simpler structures
         try:
             if (
                 time_root
@@ -225,7 +225,7 @@ class TimeProcessor:
         except (IndexError, ZeroDivisionError):
             pass
 
-        # все остальные случаи
+        # all other cases
         if not any(root.text == w.text for w in expr):
             event.append(root)
 
@@ -304,7 +304,7 @@ class TimeProcessor:
 
     def get_uncertain(self, ent):
         """
-        get uncertain for event using rules from petterns file.
+        get uncertain for event using rules from patterns file.
         Parameters
         ----------
         ent : Spacy Entity
@@ -314,13 +314,17 @@ class TimeProcessor:
         r_uncertain = self.rules[ent.ent_id_]['uncertain']
         r_form = self.rules[ent.ent_id_]['form']
         norm = ent._.normal_form
+        # ent._.form with [-1, 0, 1] is equal to triangle form
+        # ent._.form with [-2, 0, 2] is equal to fuzzy triangle form
         if ent._.form in [[-1, 0, 1], [None], [-2, 0, 2]]:
+            # processing uncertain for triangle and fuzzy triangle forms
             if callable(r_uncertain):
                 ent._.uncertain = [norm + r_uncertain(ent) * i for i in r_form]
             else:
                 ent._.uncertain = [norm + r_uncertain *
                                    i for i in r_form if i is not None]
         else:
+            # processing uncertain for trapezoid form
             if callable(r_uncertain):
                 if type(r_uncertain(ent)) is list:
                     ent._.uncertain = [
@@ -338,11 +342,11 @@ class TimeProcessor:
 
     def process(self, parsed_sentences=None, sentence=None, parser=None, date=None, birthday=None, to_dataframe=False, save=False):
         """
-        Process time expressions.
+        Process time expressions. Check types of input parameters. 
         Parameters
         ----------
         sentence : list, str
-            List of sentences or sentence, used if parsed_sentences is not None.
+            List of sentences or sentence, used if parsed_sentences is None.
         date : list, str, datetime (default=None)
             List of dates of observation or date in string or datetime format.
         birth_date : list, str, datetime (default=None)
@@ -350,7 +354,7 @@ class TimeProcessor:
         to_dataframe : bool (default=False)
             Flag, which allows to convert result to dataframe.
         parser : object (default=None)
-            Syntax parser, used if parsed_sentences is not None.
+            Syntax parser, used if parsed_sentences is None.
         parsed_sentences : list (default=None)
             List of parsed senteces, if they are already parsed in conllu format.
         to_dataframe : bool (default=False)
@@ -361,12 +365,14 @@ class TimeProcessor:
             List of parsed docs with time expressions, normal forms and stamps.
         """
         docs = list()
-
+        
+        # check types of parameters 
         if isinstance(sentence, str):
             sentence = [sentence]
             date = [date]
             birthday = [birthday]
 
+        # syntax parsing
         if parsed_sentences == None:
             parsed_sentences = parser.parse(sentence, save=save)
 
@@ -384,6 +390,7 @@ class TimeProcessor:
         else:
             self.birthdays = birthday
 
+        # convert string parameters to datetime
         for sent in range(len(parsed_sentences)):
             if len(parsed_sentences[sent]) == 0:
                 continue
@@ -408,7 +415,8 @@ class TimeProcessor:
                 self.birthday = None
             else:
                 raise TypeError("birthday must be str, datetime or Nonetype")
-
+            
+            # time expressions parsing
             self.doc = doc_from_conllu(
                 self.nlp.vocab, parsed_sentences[sent].split("\n"))
             self.doc._.date = self.date
