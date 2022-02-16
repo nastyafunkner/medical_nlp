@@ -1,5 +1,5 @@
 # medical_nlp
-The project includes 2 modules for processing natural language medical records based on syntax parsing and labeled datasets.
+The project includes 2 modules for processing natural language medical records **in Russian** based on syntax parsing and labeled datasets.
 
 More information can be found here https://github.com/nastyafunkner/medical_text_nlp_web/wiki
 
