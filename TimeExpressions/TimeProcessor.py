@@ -65,6 +65,7 @@ class TimeProcessor:
             self.Span.set_extension("uncertain", default=None, force=True)
         if event:
             self.Span.set_extension("event", getter=self.get_event, force=True)
+            self.Span.set_extension("event_dep", getter=self.get_event_dep, force=True)
 
     def find_event(self, doc, expr, exprs):
         """
@@ -83,6 +84,7 @@ class TimeProcessor:
         event : list
             Time event.
         """
+        start_doc = doc # Для отладки
         root = [token for token in doc if token.head == token][0]
         event = list()
         time_root = expr.root
@@ -90,6 +92,16 @@ class TimeProcessor:
         # search for a relative clause
         internal_sent = list()
         end = None
+
+        # TODO встроит этот кусок в логику
+        if expr.lemma_ == 'после':
+            for sub in root.subtree:
+                if sub.lemma_ == 'после':
+                    head = sub.head
+                    for sub_head in head.subtree:
+                        if not sub_head.lemma_ == 'после':
+                            event.append(sub_head)
+
         if time_root.text != root.text:
             for child in root.children:
                 if (
@@ -142,6 +154,256 @@ class TimeProcessor:
 
         if event:
             return event
+
+        # if the sentence has few branches
+        if len([i for i in root.children]) <= 2:
+            for w in root.subtree:
+                if (
+                    not any(w.text == word.text for word in all_expr)
+                    and (w.tag_ not in ["SCONJ", "PUNCT", "ADV"])
+                    and (w.lemma_ not in ["год", "от"])
+                ):
+                    event.append(w)
+            if event:
+                return event
+
+        # search for required types of links
+        if root.pos_ == "VERB":
+            for child in root.children:
+                if child.dep_ == "xcomp":
+                    new_root = child
+                    event.append(root)
+                    for w in new_root.subtree:
+                        event.append(w)
+
+        cut = False
+        for child in root.children:
+            if child.dep_ in ["nsubj:pass", "nsubj"] and not event and child.text != expr.text:
+                new_root = child
+                if len(list(new_root.children)) > 1 and len(list(new_root.subtree)) > 8:
+                    doc = Span(
+                        doc, list(new_root.subtree)[0].i, list(
+                            new_root.subtree)[-1].i + 1
+                    ).as_doc()
+                    root = [w for w in doc if w.head == w][0]
+                    cut = True
+                    break
+                if len(list(new_root.subtree)) == 1 and root.pos_ == "VERB":
+                    if list(new_root.subtree)[0].lemma_ not in ["пациент", "пациентка"]:
+                        event.append(root)
+                        event.append(new_root)
+                if len(list(new_root.subtree)) > 1:
+                    if root.pos_ != "NOUN" and root.lemma_ != "принимать":
+                        event.append(root)
+                    for w in new_root.subtree:
+                        if not any(w.text == word.text for word in all_expr):
+                            event.append(w)
+                    break
+
+        if event:
+            if len(event) == 1 and event[0].text == root.text:
+                event = []
+            else:
+                return event
+
+        # if there are many shallow branches in the sentence
+        words = list()
+        for w in root.subtree:
+            if (
+                not any(w.text == word.text for word in all_expr)
+                and (w.pos_ != "PUNCT")
+                and (w.text != "х")
+            ):
+                words.append(w)
+
+        if words and len(words) <= 3:
+            event.extend(words)
+            return event
+
+        # if the temporal exprssion is inside a complex structure, then we break it down into simpler structures
+        try:
+            if (
+                time_root
+                and time_root.head.text != root.text
+                and len(list(time_root.head.children)) > 1
+                and not cut
+            ):
+                for w in doc:
+                    if w.text == time_root.text:
+                        time_root = w
+                new_root = list(time_root.head.subtree)
+                internal_sent = Span(doc, new_root[0].i, new_root[-1].i)
+                return self.find_event(internal_sent.as_doc(), expr, exprs)
+        except (IndexError, ZeroDivisionError):
+            pass
+
+        # all other cases
+        if not any(root.text == w.text for w in expr):
+            event.append(root)
+
+        new_root = None
+        if root.n_rights:
+            if not any(list(root.rights)[0].text == w.text for w in all_expr):
+                new_root = list(root.rights)[0]
+
+        if (root.n_lefts) and (not new_root):
+            if not any(list(root.lefts)[0].text == w.text for w in all_expr):
+                new_root = list(root.lefts)[0]
+
+        if new_root:
+            for w in list(new_root.subtree)[:5]:
+                if (
+                    not any(w.text == word.text for word in all_expr)
+                    and (w.tag_ not in ["SCONJ", "PUNCT"])
+                    and (w.lemma_ != "год")
+                ):
+                    event.append(w)
+
+        return event
+
+    def find_event_dep(self, doc, expr, exprs):
+        """
+        Find event for particular time expression.
+        Parameters
+        ----------
+        doc : Spacy doc
+            Parsed sentence.
+        expr : Spacy span
+            Time expression for which you want to find the event.
+        exprs : tuple
+            Tuple of time expresions.
+
+        Returns
+        -------
+        event : list
+            Time event.
+        """
+        start_doc = doc # Для отладки
+        root = [token for token in doc if token.head == token][0]
+        event = list()
+        time_root = expr.root
+
+        # search for a relative clause
+        internal_sent = list()
+        end = None
+        # TODO встроит этот кусок в логику
+        if expr.lemma_ == 'после':
+            for sub in root.subtree:
+                if sub.lemma_ == 'после':
+                    head = sub.head
+                    for sub_head in head.subtree:
+                        if not sub_head.lemma_ == 'после':
+                            event.append(sub_head)
+
+        if time_root.text != root.text:
+            for child in root.children:
+                if (
+                    child.dep_ in ["conj", "parataxis", "acl:relcl", "advcl"]
+                    and len(list(child.children)) > 0
+                    and not list(child.children)[0].is_bracket
+                ):
+                    if not end:
+                        end = list(child.subtree)[0].i
+                    int_sent = Span(
+                        doc, list(child.subtree)[0].i, list(
+                            child.subtree)[-1].i + 1
+                    )
+                    internal_sent.append(int_sent)
+                    if (
+                        expr.text in int_sent.text
+                        and expr.text != int_sent.text
+                        and int_sent.text != time_root.text
+                        and doc.text[:-1] != int_sent.text
+                    ):
+                        return self.find_event(int_sent.as_doc(), expr, exprs)
+
+        if end:
+            if expr.text in Span(doc, 0, end).text:
+                doc = Span(doc, 0, end).as_doc()
+        elif doc[-1].pos_ == "PUNCT":
+            doc = Span(doc, 0, len(doc) - 1).as_doc()
+        root = [w for w in doc if w.head == w][0]
+        try:
+            all_expr = [w for ent in doc.ents for w in list(ent)]
+        except ValueError:
+            all_expr = expr
+        time_root = expr.root
+
+        if len(list(root.children)) == 1:
+            child = list(root.children)[0]
+            if not any(child.text == word.text for word in all_expr):
+                root = child
+
+        # Extracting an event if it is inside the tree of the formed temporal exprssion
+        if time_root and time_root.text != root.text:
+            for w in time_root.subtree:
+                if (
+                    not any(w.text == word.text for word in all_expr)
+                    and (w.tag_ not in ["CCONJ", "SCONJ", "PUNCT", "ADP", "PART"])
+                    and (w.pos_ not in ["ADV"])
+                    and (w.lemma_ not in ["год", "."])
+                ):
+                    event.append(w)
+
+        if event:
+            event_dep = list()
+            if root.tag_ == "VERB":
+                if any(child.dep_ in ["nsubj:pass", "nsubj"] for child in root.children):
+                    child_list = list(child.dep_ for child in root.children)
+                    event_dep.append(root)
+                    if child_list.count("nsubj") == 1 or child_list.count("nsubj:pass") == 1:
+                        for child in root.children:
+                            if child.dep_ in ["nsubj:pass", "nsubj"]:
+                                for w in child.subtree:
+                                    list_test = list(word.text for word in time_root.subtree)
+                                    if w.text in list_test: # Пропускаем элементы дерева, если это ВК
+                                        continue
+                                    event_dep.append(w)
+                    else:
+                        for child in root.children:
+                            if child.dep_ in ["nsubj:pass", "nsubj"]:
+                                for w in child.subtree:
+                                    list_test = list(word.text for word in time_root.subtree)
+                                    if w.text in list_test: # Переходим на другую ветку если это ВК
+                                        event_dep = list()
+                                        event_dep.append(root)
+                                        break
+                                    event_dep.append(w)
+            if root.tag_ == "NOUN":
+                if any(child.dep_ == "nmod" for child in root.children):
+                    child_list = list(child.dep_ for child in root.children)
+                    event_dep.append(root)
+                    if child_list.count("nmod") == 1:
+                        for child in root.children:
+                            if child.dep_ == "nmod":
+                                for w in child.subtree:
+                                    list_test = list(word.text for word in time_root.subtree)
+                                    if w.text in list_test: # Пропускаем элементы дерева, если это ВК
+                                        continue
+                                    event_dep.append(w)
+                    else:
+                        for child in root.children:
+                            if child.dep_ == "nmod":
+                                for w in child.subtree:
+                                    list_test = list(word.text for word in time_root.subtree)
+                                    if w.text in list_test: # Переходим на другую ветку если это ВК
+                                        event_dep = list()
+                                        event_dep.append(root)
+                                        break
+                                    event_dep.append(w)
+                                break
+            if root.tag_ == "ADJ":
+                if any(child.dep_ == "csubj" for child in root.children):
+                    child_list = list(child.dep_ for child in root.children)
+                    event_dep.append(root)
+                    for child in root.children:
+                        if child.dep_ == "csubj":
+                            for w in child.subtree:
+                                list_test = list(word.text for word in time_root.subtree)
+                                if w.text in list_test: # Пропускаем элементы дерева, если это ВК
+                                    continue
+                                event_dep.append(w)
+            return event_dep
 
         # if the sentence has few branches
         if len([i for i in root.children]) <= 2:
@@ -302,6 +564,26 @@ class TimeProcessor:
             event = self.post_proccess(event)
         return " ".join([w.text for w in event])
 
+    def get_event_dep(self, span):
+        """
+        Extract event from spacy doc.
+        Parameters
+        ----------
+        span : Spacy Span
+            Parsed sentence.
+
+        Returns
+        -------
+        result : list
+            List of time events.
+        """
+        doc = span.doc
+        exprs = doc.ents
+        event = self.find_event_dep(doc, span, exprs)
+        #if event:
+        #    event = self.post_proccess(event)
+        return " ".join([w.text for w in event])
+
     def get_uncertain(self, ent):
         """
         get uncertain for event using rules from patterns file.
@@ -383,7 +665,7 @@ class TimeProcessor:
         else:
             self.dates = date
 
-        if birthday is None:
+        if birthday is None or None in birthday:
             self.birthdays = datetime.now()
             self.birthdays = str(self.birthdays.strftime("%Y-%m-%d %H:%M:%S"))
             self.birthdays = [self.birthdays] * len(parsed_sentences)

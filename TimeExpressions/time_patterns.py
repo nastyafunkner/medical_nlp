@@ -842,7 +842,7 @@ rules = {
 ########## BEFORE RULES ##########
 # до 9 мая 2010
 'r_before_int_month_yeard4d_year': {'pattern': [{"LEMMA": 'до'}, {"_": {"is_digit": True}}, {"LEMMA": {"IN": list(MONTHS.keys())}}, {"TEXT": {"REGEX": yearfull}}, {"LEMMA": 'год', "OP": "?"}], 
-              'norm': lambda ent: [ent.doc._.birthday, strptime('{}{}{}'.format(ent[1].text, MONTHS[ent[2].lemma_][2:], ent[3].text), '%d.%m.%Y')], 
+              'norm': lambda ent: [ent.doc._.birthday, strptime('{}{}{}'.format(ent[1].text, MONTHS[ent[2].lemma_][2:], ent[3].text), '%d.%m.%Y')],
               'uncertain': [relativedelta(days=0), delta_day],
               'form': trapezoid,
               'stamp': 2},
@@ -1089,7 +1089,7 @@ rules = {
               'norm': lambda ent: None, 
               'uncertain': None,
               'form': [None],
-              'stamp': 4},
+              'stamp': 2},
 
 ########## DEPENDENT EVENTS ##########
 # через 1 - 2 месяца
@@ -1173,6 +1173,67 @@ rules = {
 # после 13 лет
 'r_after_int_unit': {'pattern': [{"LEMMA": "после"}, {"_": {"is_digit": True}}, {"LEMMA": {"IN": unit}}], 
               'norm': lambda ent: None, 
+              'uncertain': None,
+              'form': [None],
+              'stamp': 4},
+# через 1 - 2 месяца после
+'r_thr_int_dash_int_unit_after_1': {'pattern': [{"LEMMA": {"IN": ["через", "спустя"]}}, {"_": {"is_digit": True}},
+                                                {"TEXT": {"IN": ["–", "-"]}}, {"_": {"is_digit": True}}, {"LEMMA": {"IN": unit}}, {"LEMMA": "после"}],
+              'norm': lambda ent: None,
+              'uncertain': None,
+              'form': [None],
+              'stamp': 4},
+# через 1-2 месяца после
+'r_thr_range_unit_after_1': {'pattern': [{"LEMMA": {"IN": ["через", "спустя"]}}, {"TEXT": {"REGEX": range_r}}, {"LEMMA": {"IN": unit}}, {"LEMMA": "после"}],
+              'norm': lambda ent: None,
+              'uncertain': None,
+              'form': [None],
+              'stamp': 4},
+# через 1 месяц после
+'r_thr_int_unit_after_1': {'pattern': [{"LEMMA": {"IN": ["через", "спустя"]}}, {"_": {"is_digit": True}}, {"LEMMA": {"IN": unit + ['мес']}}, {"LEMMA": "после"}],
+              'norm': lambda ent: None,
+              'uncertain': None,
+              'form': [None],
+              'stamp': 4},
+# через 5 минут после
+'r_thr_int_minute_after_1': {'pattern': [{"LEMMA": {"IN": ["через", "спустя"]}}, {"_": {"is_digit": True}}, {"LEMMA": {"IN": ['минута', 'мина']}}, {"LEMMA": "после"}],
+              'norm': lambda ent: None,
+              'uncertain': None,
+              'form': [None],
+              'stamp': 4},
+# через два месяц после
+'r_thr_num_unit_after_1': {'pattern': [{"LEMMA": {"IN": ["через", "спустя"]}}, {"LEMMA": {"IN": list(digit1d.keys())}}, {"LEMMA": {"IN": unit}}, {"LEMMA": "после"}],
+              'norm': lambda ent: None,
+              'uncertain': None,
+              'form': [None],
+              'stamp': 4},
+# Спустя месяц после
+'r_thr_unit_after_1': {'pattern': [{"LEMMA": {"IN": ["через", "спустя"]}}, {"LEMMA": {"IN": unit}}, {"LEMMA": "после"}],
+              'norm': lambda ent: None,
+              'uncertain': None,
+              'form': [None],
+              'stamp': 4},
+# через некоторое время после
+'r_thr_some_time_after_1': {'pattern': [{"LEMMA": {"IN": ["через", "спустя"]}}, {"LEMMA": "некоторый"}, {"LEMMA": "время"}, {"LEMMA": "после"}],
+              'norm': lambda ent: None,
+              'uncertain': None,
+              'form': [None],
+              'stamp': 4},
+# через несколько дней после
+'r_thr_some_unit_after_1': {'pattern': [{"LEMMA": {"IN": ["через", "спустя"]}}, {"LEMMA": "несколько"}, {"LEMMA": {"IN": unit + ['минута']}}, {"LEMMA": "после"}],
+              'norm': lambda ent: None,
+              'uncertain': None,
+              'form': [None],
+              'stamp': 4},
+# спустя пол часа после
+'r_thr_half_unit_after_1': {'pattern': [{"LEMMA": {"IN": ["через", "спустя"]}}, {"TEXT": "пол"}, {"LEMMA": {"IN": unit}}, {"LEMMA": "после"}],
+              'norm': lambda ent: None,
+              'uncertain': None,
+              'form': [None],
+              'stamp': 4},
+# После
+'r_after_1': {'pattern': [{"LEMMA": "после"}],
+              'norm': lambda ent: None,
               'uncertain': None,
               'form': [None],
               'stamp': 4},
